@@ -1,0 +1,40 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Antigravity CLI Native Runner for Termux
+# Runs agy WITHOUT QEMU emulation — direct native CPU execution.
+# Uses a lightweight LD_PRELOAD shim to handle syscall compatibility
+# instead of full instruction-level emulation.
+
+# Paths
+G=/data/data/com.termux/files/usr/glibc/lib
+S=$HOME/.local/lib/agy-glibc
+R=$HOME/.local/share/agy-fake-root
+SHIM=$HOME/.local/lib/agy_native_shim.so
+
+# Ensure shim exists (required for glibc on Termux)
+if [ ! -d "$S" ]; then
+    mkdir -p "$S"
+    ln -sf "$G/libc.so.6" "$S/libc.so"
+fi
+
+# Check that the native shim exists
+if [ ! -f "$SHIM" ]; then
+    echo "ERROR: Native shim not found at $SHIM"
+    echo "Falling back to QEMU mode..."
+    exec $HOME/antigravity/bin/agy.qemu "$@"
+fi
+
+# Environment
+unset LD_PRELOAD
+unset LD_LIBRARY_PATH
+export GODEBUG=asyncpreemptoff=1,netdns=go
+export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/cert.pem
+export AGY_FAKE_ROOT="$R"
+
+# Run DIRECTLY — no QEMU, no emulation
+# The native shim handles:
+#   - Stubbing missing syscalls (pidfd_open, clone3, etc.)
+#   - Redirecting /etc/resolv.conf to fake-root
+# Everything else runs at full native CPU speed.
+LD_PRELOAD="$SHIM" exec $G/ld-linux-aarch64.so.1 \
+  --library-path $S:$G \
+  $HOME/antigravity/bin/agy.va39 "$@"
